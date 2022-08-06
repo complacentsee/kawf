@@ -55,6 +55,16 @@
   <td class="left"><b>Page:</b> {PAGES}</td>
   <td class="right">{NUMTHREADS} threads in {NUMPAGES} pages</td>
 </tr>
+<tr class="users">
+  <td class="left">
+  </td>
+  <td class="right">Active Users: {ACTIVE_USERS}</td>
+</tr>
+<tr class="guests">
+  <td class="left">
+  </td>
+  <td class="right">Active Guests: {ACTIVE_GUESTS}</td>
+</tr>
 </table>
 <div class="forumpost">
 <a id="post"><img src="/pics/post.gif" alt="post message"></a>

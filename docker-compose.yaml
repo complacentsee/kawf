@@ -12,12 +12,24 @@ services:
    kawf:
      depends_on:
        - db
+       - cache
      image: kawf:latest
      ports:
        - "80:80"
      restart: unless-stopped
      env_file:
        - 'config/envvars'
+   cache:
+     image: arm64v8/redis
 
+     env_file:
+       - 'config/envvars'
+     ports:
+       - '6379:6379'
+     volumes:
+       - 'redis_data:/data'
+       - './Docker/redis.conf:/usr/local/etc/redis/redis.conf'
+     entrypoint: ["redis-server", "/usr/local/etc/redis/redis.conf"]
 volumes:
     db_data: {}
+    redis_data: {}

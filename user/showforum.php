@@ -359,9 +359,20 @@ $tpl->set_var(array(
 ));
 */
 
+function get_visits($vist_type) {
+  global $redis;;
+
+  $visit_keys = array();
+  for ($i = 0; $i < 30; $i++) {
+    $visit_keys[] = 'visits:' . date("Y:m:d:H:i", time() - $i * 60) . ':' . $vist_type;
+  }
+  return $redis->pfCount($visit_keys);
+}
+
+
 $tpl->set_var(array(
-  "ACTIVE_USERS" => 1,
-  "ACTIVE_GUESTS" => 1,
+  "ACTIVE_USERS" => get_visits('user'),
+  "ACTIVE_GUESTS" => get_visits('guest'),
 ));
 
 unset($thread);

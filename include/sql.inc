@@ -105,6 +105,24 @@ function db_query_first($sql, $args=array()) {
   return $row ? $row : NULL;
 }
 
+// Prepare and execute a database query within a transacation, if transacation 
+// succeeds, commit it.  If it fails, rollback the transaction and throw the 
+// exception.
+function db_query_transaction($sql, $args=array()) {
+  global $DBH;
+  $DBH->beginTransaction();
+  try {
+    $sth = db_query($sql, $args);
+    $row = $DBH->lastInsertId();
+    $DBH->commit();
+  } catch(PDODuplicateKey $e) {
+    $DBH->rollBack();
+    $row = NULL;
+    throw $e;
+  }
+  return $row;
+}
+
 function db_last_insert_id() {
   global $DBH;
   return $DBH->lastInsertId();

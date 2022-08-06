@@ -33,8 +33,10 @@ require_once("forumuser.inc");
 require_once("timezone.inc");
 require_once("acl_ip_ban.inc");
 require_once("acl_ip_ban_list.inc");
+require_once("redis.inc");
 
 db_connect();
+redis_connect();
 
 $tpl = new Template($template_dir, "comment");
 
@@ -117,15 +119,20 @@ $IPBAN = AclIpBanList::find_matching_ban_list($_SERVER["REMOTE_ADDR"]);
 
 function update_visits()
 {
-  global $user, $_SERVER;
-  $ip = "'" . addslashes($_SERVER['REMOTE_ADDR']) . "'";
-  $aid = -1;
+  global $user, $_SERVER, $redis;;
 
-  if ($user->valid())
-    $aid = $user->aid;
+  if (isset($_SERVER['HTTP_CLIENT_IP'])) {
+    $client_ip_address = $_SERVER['HTTP_CLIENT_IP'];
+  } elseif (isset($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+      $client_ip_address = $_SERVER['HTTP_X_FORWARDED_FOR'];
+  } else {
+      $client_ip_address = $_SERVER['REMOTE_ADDR'];
+  }
 
-  $sql = "insert into f_visits ( aid, ip ) values ( ?, ? ) on duplicate key update tstamp=NOW()";
-  db_exec($sql, array($aid, $ip));
+  $vist_type = ($user->valid()) ? "user" : "guest";
+  $current_HLL_key = 'visits:' . date("Y:m:d:H:i", time()) . ':' . $vist_type;
+  $redis->pfAdd($current_HLL_key, [$client_ip_address]);
+  $redis->expire($current_HLL_key, 3600);
 }
 
 function find_forum($shortname)
@@ -155,17 +162,27 @@ function find_forum($shortname)
 
 function build_indexes($fid)
 {
+  global $redis;
   $indexes = array();
+  if(($redis->hExists('f_index_' . $fid,'iid')) && False){
+    $indexes = $redis->hGetAll('f_index_' . $fid);
+  } else {
+    /* Grab all of the indexes for the forum */
+    $sql = "select * from f_indexes where fid = ? and ( minmid != 0 or minmid < maxmid ) order by iid";
+    $sth = db_query($sql, array($fid));
 
-  /* Grab all of the indexes for the forum */
-  $sql = "select * from f_indexes where fid = ? and ( minmid != 0 or minmid < maxmid ) order by iid";
-  $sth = db_query($sql, array($fid));
+    /* build indexes shard id cache */
+    while ($index = $sth->fetch())
+      $indexes[] = $index;
+    $sth->closeCursor();
 
-  /* build indexes shard id cache */
-  while ($index = $sth->fetch())
-    $indexes[] = $index;
-  $sth->closeCursor();
-  
+    foreach ($indexes as $index) {
+      foreach ($index as $key => $value) {
+        if(!is_numeric($key))
+          $redis->hSet('f_index_' . $index['fid'],$key,$value);
+      }
+    }
+  }
   return $indexes;
 }
 
@@ -378,9 +395,7 @@ if (preg_match("/^(\/)?([A-Za-z0-9\.]*)$/", $script_name.$path_info, $regs)) {
 } else
   err_not_found("Unknown path");
 
-
-/* FIXME: This kills performance */
-// update_visits();
+update_visits();
 
 // vim: sw=2
 ?>
