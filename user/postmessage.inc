@@ -125,7 +125,7 @@ function postmessage($user, $fid, &$msg, $request)
     $redis->hSet($request['postcookie'],'mid',$msg['mid']);
 
 
-    if (isset(!$msg['pmid'])) {
+    if (!isset($msg['pmid'])) {
       /* Message is a new thread, update thread table */
       /* TZ: f_threadsXX 'tstamp' is SQL server local time */
       $sql = "insert into $ttable (mid, tstamp, flags ) values ( ?, NOW(), '' )";
