@@ -1,4 +1,5 @@
 <?php
+global $redis;
 if (!isset($forum)) {
   echo "Invalid forum\n";
   exit;
@@ -46,8 +47,13 @@ foreach ($options as $name => $value) {
 if ($stick) {
     $options[] = 'Sticky';
     $what = 'Stuck';
+//    $redis->sAdd('forum_' . $forum['fid'] . ':sticky:threads', $tid);
+    $redis->zAdd('forum_' . $forum['fid'] . ':sticky:threads', -$tid, $tid);
+    $redis->unlink('forum_' . $forum['fid'] . ':sticky:valid');
 } else {
     $what = 'Unstuck';
+    $redis->zRem('forum_' . $forum['fid'] . ':sticky:threads', $tid);
+    $redis->unlink('forum_' . $forum['fid'] . ':sticky:valid');
 }
 
 $flags = implode(",", array_filter($options));

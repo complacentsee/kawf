@@ -1,4 +1,5 @@
 <?php
+global $redis;
 
 require_once("thread.inc");
 require_once("pagenav.inc.php");
@@ -157,31 +158,56 @@ if ($curpage == 1) {
   /* show stickies next */
   /**********************/
   foreach ($indexes as $index) {
-    $sql = "select *, UNIX_TIMESTAMP(tstamp) as unixtime from f_threads" . $index['iid'] . 
-    " where tid in" . 
-    " (SELECT tid FROM f_sticky" . $index['iid'] . ")" .
-    " order by tid desc";
-    $sth = db_query($sql);
-    while ($thread = $sth->fetch()) {
-	gen_thread_flags($thread);
-	$collapse = !is_thread_bumped($thread);
-
-	$messagestr = gen_thread($thread, $collapse);
-	if (!$messagestr) continue;
-
-	$threadlinks = gen_threadlinks($thread, $collapse);
-
-	$tpl->set_var("CLASS", "srow" . ($numshown % 2));
-	$tpl->set_var("MESSAGES", $messagestr);
-	$tpl->set_var("THREADLINKS", $threadlinks);
-	$tpl->parse("_row", "row", true);
-
-	$threadshown[$thread['tid']] = 'true';
-	$stickythreads++;
-	$numshown++;
-	if (!$collapse) $tthreadsshown++;
+    if ($redis->exists('forum_' . $forum['fid'] . ':sticky:valid')) {
+      $sticky_keys = $redis->zRange('forum_' . $forum['fid'] . ':sticky:threads', 0, -1);
+      foreach ($sticky_keys as $sticky_key) {
+        $threads[] = $redis->hGetAll('forum_' . $forum['fid'] . ':sticky:thread:' . $sticky_key);
+      }
+    } else {
+      $sql = "select *, UNIX_TIMESTAMP(tstamp) as unixtime from f_threads" . $index['iid'] . 
+      " where tid in" . 
+      " (SELECT tid FROM f_sticky" . $index['iid'] . ")" .
+      " order by tid desc";
+      $sth = db_query($sql);
+      $threads = $sth->fetchAll();
+      $sth->closeCursor();
+      //remove old threads
+      $sticky_keys = $redis->keys('forum_' . $forum['fid'] . ':sticky:thread:*');
+      foreach ($sticky_keys as $sticky_key) {
+        $redis->unlink($sticky_key);
+      }
+      $redis->unlink(['forum_' . $forum['fid'] . ':sticky:threads']);
+      foreach ($threads as $thread) {
+        $redis->zAdd('forum_' . $forum['fid'] . ':sticky:threads', -$thread['tid'], $thread['tid']);
+        foreach($thread as $key => $value) {
+          if(!is_numeric($key))
+            $redis->hSet('forum_' . $forum['fid'] . ':sticky:thread:' . $thread['tid'],$key,$value);
+        }
+      $redis->set('forum_' . $forum['fid'] . ':sticky:valid',true);
+      $redis->expire('forum_' . $forum['fid'] . ':sticky:valid', 600);
+      }
     }
-    $sth->closeCursor();
+    
+    /* Loop through each thread and display it */
+    foreach ($threads as $thread) {
+      gen_thread_flags($thread);
+      $collapse = !is_thread_bumped($thread);
+
+      $messagestr = gen_thread($thread, $collapse);
+      if (!$messagestr) continue;
+
+      $threadlinks = gen_threadlinks($thread, $collapse);
+
+      $tpl->set_var("CLASS", "srow" . ($numshown % 2));
+      $tpl->set_var("MESSAGES", $messagestr);
+      $tpl->set_var("THREADLINKS", $threadlinks);
+      $tpl->parse("_row", "row", true);
+
+      $threadshown[$thread['tid']] = 'true';
+      $stickythreads++;
+      $numshown++;
+      if (!$collapse) $tthreadsshown++;
+    }
   }
 
   /* reset so threads per page is right */
@@ -227,9 +253,13 @@ $threadtable = count($indexes) - 1;
     correct offset for thread selection to avoid skipping threads*/
 if ($curpage > 1) {
   foreach ($indexes as $index) {
-    $sql = "select count(mid) FROM f_sticky" . $index['iid'];
-    $row = db_query_first($sql, array());
-    $stickythreads = $row[0];
+    if ($redis->exists('forum_' . $forum['fid'] . ':sticky:valid')) {
+      $stickythreads = $redis->zCount('forum_' . $forum['fid'] . ':sticky:threads', '-inf', 'inf');
+    } else {
+      $sql = "select count(mid) FROM f_sticky" . $index['iid'];
+      $row = db_query_first($sql, array());
+      $stickythreads = $row[0];
+    }  
   }
 }
 
@@ -348,27 +378,15 @@ if (!$tthreadsshown)
 if (!$numshown)
   $tpl->set_var($table_block, "<span style=\"font-size: larger;\">No messages in this forum</span><br>");
 
-/*
-$row = db_query_first("select count(*) from f_visits where UNIX_TIMESTAMP(NOW()) - UNIX_TIMESTAMP(tstamp) <= 15 * 60 and aid != 0");
-$active_users = $row ? $row[0] : 0;
-$row = db_query_first("select count(*) from f_visits where UNIX_TIMESTAMP(NOW()) - UNIX_TIMESTAMP(tstamp) <= 15 * 60 and aid = 0");
-$active_guests = $row ? $row[0] : 0;
-$tpl->set_var(array(
-  "ACTIVE_USERS" => $active_users,
-  "ACTIVE_GUESTS" => $active_guests,
-));
-*/
 
 function get_visits($vist_type) {
-  global $redis;;
-
+  global $redis;
   $visit_keys = array();
   for ($i = 0; $i < 30; $i++) {
     $visit_keys[] = 'visits:' . date("Y:m:d:H:i", time() - $i * 60) . ':' . $vist_type;
   }
   return $redis->pfCount($visit_keys);
 }
-
 
 $tpl->set_var(array(
   "ACTIVE_USERS" => get_visits('user'),

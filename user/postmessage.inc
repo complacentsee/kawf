@@ -48,24 +48,24 @@ function postmessage($user, $fid, &$msg, $request)
   /* Add it into the database */
   /* Check to make sure this isn't a duplicate */
   /* TZ: 'tstamp' is SQL server localtime */
+  $cookie_key = 'forum_' . $fid . ':postcookie:' . $request['postcookie'];
+  $redis->hSet($cookie_key,'fid',$fid);
+  $redis->expire($cookie_key, 180);
+  $redis->hSet($cookie_key,'aid',$user->aid);
+  $redis->hSet($cookie_key,'ip',$msg['ip']);
+  /* No exception, everything is ok, post */
+  $newmessage = true;
 
-    $redis->hSet($request['postcookie'],'fid',$fid);
-    $redis->expire($request['postcookie'], 180);
-    $redis->hSet($request['postcookie'],'aid',$user->aid);
-    $redis->hSet($request['postcookie'],'ip',$msg['ip']);
-    /* No exception, everything is ok, post */
-    $newmessage = true;
+  /* Cookie already exists in f_dupposts. Message might be a dup */
+  /* Get mid for this cookie, if any */
+  $msg['mid'] = $redis->hExists($cookie_key,'mid') ? $redis->hGet($cookie_key,'mid') : NULL;
 
-    /* Cookie already exists in f_dupposts. Message might be a dup */
-    /* Get mid for this cookie, if any */
-    $msg['mid'] = $redis->hExists($request['postcookie'],'mid') ? $redis->hGet($request['postcookie'],'mid') : NULL;
-
-    /* Issue #25 - if there is no mid for this cookie, the message wasn't posted yet,
-     * so this message isn't a dup - it truly is new. Pretend nothing bad happened */
-    if (!$msg['mid'])
-	    $newmessage = true;  
-    else
-	    $newmessage = false;
+  /* Issue #25 - if there is no mid for this cookie, the message wasn't posted yet,
+    * so this message isn't a dup - it truly is new. Pretend nothing bad happened */
+  if (!$msg['mid'])
+    $newmessage = true;  
+  else
+    $newmessage = false;
 
   if(!$newmessage) {
     /* get old message state */
@@ -87,7 +87,7 @@ function postmessage($user, $fid, &$msg, $request)
     if ($omsg != null && !is_null($omsg['state'])) {
       if (!isset($msg['pmid'])){
         db_exec("update f_indexes set " . $omsg['state'] . " = " . $omsg['state'] . " - 1 where iid = ?", array($iid));
-        $redis->hIncrBy('f_index_' . $fid, strtolower($omsg['state']) , -1);
+        $redis->hIncrBy('f_index:' . $fid, strtolower($omsg['state']) , -1);
       }
       /* unwind post count for old message */
       $user->post($fid, $omsg['state'], -1);
@@ -122,7 +122,7 @@ function postmessage($user, $fid, &$msg, $request)
     ));
 
     $msg['mid'] = $mid;
-    $redis->hSet($request['postcookie'],'mid',$msg['mid']);
+    $redis->hSet($cookie_key,'mid',$msg['mid']);
 
 
     if (!isset($msg['pmid'])) {
@@ -131,6 +131,8 @@ function postmessage($user, $fid, &$msg, $request)
       $sql = "insert into $ttable (mid, tstamp, flags ) values ( ?, NOW(), '' )";
       $tid = db_query_transaction($sql, array($msg['mid']));
       $msg['tid'] = $tid;
+
+      $redis->zAdd('forum_' . $fid . ':threads', ['nx', 'ex'=>864000], $msg['tid'],$msg['tid']);
 
       $sql = "update $mtable set tid = ? where mid = ?";
       db_exec($sql, array($msg['tid'], $msg['mid']));
@@ -165,7 +167,7 @@ function postmessage($user, $fid, &$msg, $request)
     }
     
     foreach ($msg as $key => $value) {
-      $redis->hSet($fid . '-' . $msg['mid'],$key,$value);
+      $redis->hSet('forum_' . $fid . ':messages:' . $msg['mid'],$key,$value);
     }
 
     /* update indexes  */
@@ -179,11 +181,11 @@ function postmessage($user, $fid, &$msg, $request)
 
     if (!$msg['pmid']) {
       db_exec($sql, array($msg['mid'], $msg['tid'], $iid));
-      $redis->hSet('f_index_' . $fid, 'maxtid', $msg['tid']);
-      $redis->hIncrBy('f_index_' . $fid, strtolower($status), 1);
+      $redis->hSet('f_index:' . $fid, 'maxtid', $msg['tid']);
+      $redis->hIncrBy('f_index:' . $fid, strtolower($status), 1);
     } else {
       db_exec($sql, array($msg['mid'], $iid));
-      $redis->hSet('f_index_' . $fid, 'maxmid', $msg['mid']);
+      $redis->hSet('f_index:' . $fid, 'maxmid', $msg['mid']);
     }
 
     /* bump post count for user */
