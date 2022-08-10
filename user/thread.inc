@@ -5,28 +5,46 @@ require_once("listthread.inc");
 
 function get_thread_messages($thread, $vmid = 0)
 {
-  global $user, $indexes;
-
+  global $user, $indexes, $redis;
   /* find my messages and later */
-  for ($index = find_msg_index($thread['mid']); isset($indexes[$index]); $index++) {
-    $iid = $indexes[$index]['iid'];
-    /* TZ: unixtime is seconds since epoch */
-    $sql = "select mid, tid, pid, aid, state, UNIX_TIMESTAMP(date) as unixtime, subject, flags, name, email, views " .
-      "from f_messages$iid where tid = ? order by mid";
-    $sth = db_query($sql, array($thread['tid']));
-    while ($msg = $sth->fetch()) {
-      /* modifies message */
+  foreach ($indexes as $index) {
+    $iid = $index['iid'];
+
+    if(($redis->exists('forum_' . $iid . ':thread:' . $thread['tid'] . ':messages:valid'))) {
+      $thread_keys = $redis->zRange('forum_' . $iid . ':thread:' . $thread['tid'] . ':messages', 0, -1);
+      foreach ($thread_keys as $thread_key) {
+        $msgs[] = $redis->hGetAll('forum_' . $iid . ':messages:' . $thread_key);
+      }
+    } else {
+      /* TZ: unixtime is seconds since epoch */
+      $sql = "select mid, tid, pid, aid, state, UNIX_TIMESTAMP(date) as unixtime, subject, flags, name, email, views " .
+        "from f_messages$iid where tid = ? order by mid";
+      $sth = db_query($sql, array($thread['tid']));
+      $msgs = $sth->fetchAll();
+      $sth->closeCursor();
+
+      foreach($msgs as $msg) {
+        foreach($msg as $key => $value) {
+          if(!is_numeric($key)){
+            $redis->zAdd('forum_' . $iid . ':thread:' . $thread['tid'] . ':messages', $msg['mid'], $msg['mid']);
+            $redis->hSet('forum_' . $iid . ':messages:' . $msg['mid'],$key,$value);
+          }
+        }
+      }
+      $redis->set('forum_' . $iid . ':thread:' . $thread['tid'] . ':messages:valid',true);
+      $redis->expire('forum_' . $iid . ':thread:' . $thread['tid'] . ':messages:valid', 300);
+    }
+    foreach($msgs as $msg){
       process_message($user, $msg);
       $messages[] = $msg;
     }
-    $sth->closeCursor();
   }
 
-  if (!isset($msg)) {
-    /* fatal error - message doesn't belong to a thread! */
-    /* FIXME: there is no way to navigate to this message */
-    return null;
-  }
+  // if (!isset($msg)) {
+  //   /* fatal error - message doesn't belong to a thread! */
+  //   /* FIXME: there is no way to navigate to this message */
+  //   return null;
+  // }
 
   /* Create a tree of the messages */
   //reset($messages);

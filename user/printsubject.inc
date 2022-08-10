@@ -73,7 +73,7 @@ function print_subject($thread, $msg, $replies = -1, $collapse = false)
   if ($replies > 0)
     $string .= " ($replies " . ($replies == 1 ? "reply" : "replies") . ($collapse?" hidden":"") . ")";
 
-  if ($msg['views']>0)
+  if (isset($msg['views']) && $msg['views'] > 0)
     $string .= " (" . $msg['views'] . " view" . ($msg['views'] == 1 ? "" : "s") . ")";
 
   $string .= "</span>\n";

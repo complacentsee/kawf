@@ -37,6 +37,9 @@ $iid = mid_to_iid($mid);
 $sql = "update f_messages$iid  set views = views + 1 where mid = ?";
 db_exec($sql, array($mid));
 
+global $redis;
+$redis->hIncrBy('forum_' . $iid . ':messages:' . $mid, 'views' , 1);
+
 if (!empty($msg['flags'])) {
   $flagexp = explode(",", $msg['flags']);
   //while (list(,$flag) = each($flagexp))

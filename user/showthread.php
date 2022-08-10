@@ -5,7 +5,7 @@ require_once("filter.inc");
 require_once("thread.inc");
 require_once("message.inc");
 require_once("page-yatt.inc.php");
-
+global $redis;
 $tpl->set_file(array(
   "showthread" => "showthread.tpl",
   "forum_header" => array("forum/" . $forum['shortname'] . ".tpl", "forum/generic.tpl"),
@@ -78,6 +78,7 @@ function print_message($thread, $msg)
   if (isset($iid)) {
       $sql = "update f_messages$iid set views = views + 1 where mid = ?";
       db_exec($sql, array($msg['mid']));
+      $redis->hIncrBy('forum_' . $iid . ':messages:' . $msg['mid'], 'views' , 1);
   }
 
   $uuser = new ForumUser($msg['aid']);

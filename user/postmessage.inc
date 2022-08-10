@@ -48,8 +48,8 @@ function postmessage($user, $fid, &$msg, $request)
   /* Add it into the database */
   /* Check to make sure this isn't a duplicate */
   /* TZ: 'tstamp' is SQL server localtime */
-  $cookie_key = 'forum_' . $fid . ':postcookie:' . $request['postcookie'];
-  $redis->hSet($cookie_key,'fid',$fid);
+  $cookie_key = 'forum_' . $iid . ':postcookie:' . $request['postcookie'];
+  $redis->hSet($cookie_key,'iid',$iid);
   $redis->expire($cookie_key, 180);
   $redis->hSet($cookie_key,'aid',$user->aid);
   $redis->hSet($cookie_key,'ip',$msg['ip']);
@@ -87,7 +87,7 @@ function postmessage($user, $fid, &$msg, $request)
     if ($omsg != null && !is_null($omsg['state'])) {
       if (!isset($msg['pmid'])){
         db_exec("update f_indexes set " . $omsg['state'] . " = " . $omsg['state'] . " - 1 where iid = ?", array($iid));
-        $redis->hIncrBy('f_index:' . $fid, strtolower($omsg['state']) , -1);
+        $redis->hIncrBy('f_index:' . $iid, strtolower($omsg['state']) , -1);
       }
       /* unwind post count for old message */
       $user->post($fid, $omsg['state'], -1);
@@ -108,7 +108,7 @@ function postmessage($user, $fid, &$msg, $request)
 	          "(aid, pid, tid, name, email, date, ip, flags, subject, message, url, urltext, video, state, views, changes ) "
             . "values (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, 0, ? );";
 
-    if ($msg["imagedeleteurl"]) {
+    if (isset($msg["imagedeleteurl"])) {
       $msg["changes"] = "Image delete url for " . $msg["imageurl"] . " = " . $msg["imagedeleteurl"] . "\n";
     } else {
       $msg["changes"] = "";
@@ -131,8 +131,6 @@ function postmessage($user, $fid, &$msg, $request)
       $sql = "insert into $ttable (mid, tstamp, flags ) values ( ?, NOW(), '' )";
       $tid = db_query_transaction($sql, array($msg['mid']));
       $msg['tid'] = $tid;
-
-      $redis->zAdd('forum_' . $fid . ':threads', ['nx', 'ex'=>864000], $msg['tid'],$msg['tid']);
 
       $sql = "update $mtable set tid = ? where mid = ?";
       db_exec($sql, array($msg['tid'], $msg['mid']));
@@ -167,8 +165,9 @@ function postmessage($user, $fid, &$msg, $request)
     }
     
     foreach ($msg as $key => $value) {
-      $redis->hSet('forum_' . $fid . ':messages:' . $msg['mid'],$key,$value);
+      $redis->hSet('forum_' . $iid . ':messages:' . $msg['mid'],$key,$value);
     }
+    $redis->hSet('forum_' . $iid . ':messages:' . $msg['mid'],'unixtime',time());
 
     /* update indexes  */
     $sql = "update f_indexes set maxmid = ? ";
@@ -181,11 +180,13 @@ function postmessage($user, $fid, &$msg, $request)
 
     if (!$msg['pmid']) {
       db_exec($sql, array($msg['mid'], $msg['tid'], $iid));
-      $redis->hSet('f_index:' . $fid, 'maxtid', $msg['tid']);
-      $redis->hIncrBy('f_index:' . $fid, strtolower($status), 1);
+      $redis->hSet('f_index:' . $iid, 'maxtid', $msg['tid']);
+      $redis->hSet('f_index:' . $iid, 'maxmid', $msg['mid']); 
+      $redis->hIncrBy('f_index:' . $iid, strtolower($status), 1);
     } else {
       db_exec($sql, array($msg['mid'], $iid));
-      $redis->hSet('f_index:' . $fid, 'maxmid', $msg['mid']);
+      $redis->hSet('f_index:' . $iid, 'maxmid', $msg['mid']);
+      $redis->zAdd('forum_' . $iid . ':thread:' . $msg['tid'] . ':messages', $msg['mid'], $msg['mid']);
     }
 
     /* bump post count for user */

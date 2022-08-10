@@ -158,10 +158,10 @@ if ($curpage == 1) {
   /* show stickies next */
   /**********************/
   foreach ($indexes as $index) {
-    if ($redis->exists('forum_' . $index['iid'] . ':sticky:valid')) {
-      $sticky_keys = $redis->zRange('forum_' . $index['iid'] . ':sticky:threads', 0, -1);
+    if ($redis->exists('forum_' . $forum['fid'] . ':sticky:valid')) {
+      $sticky_keys = $redis->zRange('forum_' . $forum['fid'] . ':sticky:threads', 0, -1);
       foreach ($sticky_keys as $sticky_key) {
-        $threads[] = $redis->hGetAll('forum_' . $index['iid'] . ':sticky:thread:' . $sticky_key);
+        $threads[] = $redis->hGetAll('forum_' . $forum['fid'] . ':sticky:thread:' . $sticky_key);
       }
     } else {
       $sql = "select *, UNIX_TIMESTAMP(tstamp) as unixtime from f_threads" . $index['iid'] . 
@@ -172,19 +172,19 @@ if ($curpage == 1) {
       $threads = $sth->fetchAll();
       $sth->closeCursor();
       //remove old threads
-      $sticky_keys = $redis->keys('forum_' . $index['iid'] . ':sticky:thread:*');
+      $sticky_keys = $redis->keys('forum_' . $forum['fid'] . ':sticky:thread:*');
       foreach ($sticky_keys as $sticky_key) {
         $redis->unlink($sticky_key);
       }
-      $redis->unlink(['forum_' . $index['iid'] . ':sticky:threads']);
+      $redis->unlink(['forum_' . $forum['fid'] . ':sticky:threads']);
       foreach ($threads as $thread) {
-        $redis->zAdd('forum_' . $index['iid'] . ':sticky:threads', -$thread['tid'], $thread['tid']);
+        $redis->zAdd('forum_' . $forum['fid'] . ':sticky:threads', -$thread['tid'], $thread['tid']);
         foreach($thread as $key => $value) {
           if(!is_numeric($key))
-            $redis->hSet('forum_' . $index['iid'] . ':sticky:thread:' . $thread['tid'],$key,$value);
+            $redis->hSet('forum_' . $forum['fid'] . ':sticky:thread:' . $thread['tid'],$key,$value);
         }
-      $redis->set('forum_' . $index['iid'] . ':sticky:valid',true);
-      $redis->expire('forum_' . $index['iid'] . ':sticky:valid', 600);
+      $redis->set('forum_' . $forum['fid'] . ':sticky:valid',true);
+      $redis->expire('forum_' . $forum['fid'] . ':sticky:valid', 600);
       }
     }
     
@@ -208,7 +208,6 @@ if ($curpage == 1) {
       $numshown++;
       if (!$collapse) $tthreadsshown++;
     }
-    unset($threads);
   }
 
   /* reset so threads per page is right */
@@ -247,14 +246,15 @@ if ($curpage == 1) {
 } /* $curpage == 1 */
 
 $skipthreads = ($curpage - 1) * $threadsperpage;
+
 $threadtable = count($indexes) - 1;
 
 /*  get number of sticky threads that would have been shown on page 1, 
     correct offset for thread selection to avoid skipping threads*/
 if ($curpage > 1) {
   foreach ($indexes as $index) {
-    if ($redis->exists('forum_' . $index['iid'] . ':sticky:valid')) {
-      $stickythreads = $redis->zCount('forum_' . $index['iid'] . ':sticky:threads', '-inf', 'inf');
+    if ($redis->exists('forum_' . $forum['fid'] . ':sticky:valid')) {
+      $stickythreads = $redis->zCount('forum_' . $forum['fid'] . ':sticky:threads', '-inf', 'inf');
     } else {
       $sql = "select count(mid) FROM f_sticky" . $index['iid'];
       $row = db_query_first($sql, array());
@@ -276,73 +276,97 @@ if ($curpage != 1 && ($threadtable < 0 || !isset($indexes[$threadtable]))) {
   exit;
 }
 
+while ($numshown < $threadsperpage) {
+  while (isset($indexes[$threadtable])) {
+    $index = $indexes[$threadtable];
 
-/// Display Regular Threads
-$index = $indexes[$threadtable];
+    $ttable = "f_threads" . $index['iid'];
+    $mtable = "f_messages" . $index['iid'];
 
-$ttable = "f_threads" . $index['iid'];
-$mtable = "f_messages" . $index['iid'];
+    /* Get some more results */
+    $sql = "select UNIX_TIMESTAMP($ttable.tstamp) as unixtime," .
+    " $ttable.tid, $ttable.mid, $ttable.flags, $mtable.state from $ttable, $mtable where" .
+    " $ttable.tid >= ? and" .
+    " $ttable.tid <= ? and" .
+    " $ttable.mid >= ? and" .
+    " $ttable.mid <= ? and" .
+    " $ttable.flags NOT LIKE '%STICKY%' and " .   // removing sticky threads from the selection keeps offsets correct if sticky is on page 1
+    " $ttable.mid = $mtable.mid and ( $mtable.state = 'Active' ";
+    $sql_args = array($index['mintid'], $index['maxtid'], $index['minmid'], $index['maxmid']);
+    if ($user->capable($forum['fid'], 'Delete'))
+      $sql .= "or $mtable.state = 'Deleted' or $mtable.state = 'Moderated' or $mtable.state = 'OffTopic' "; 
+    else {
+      if (isset($user->pref['ShowModerated']))
+        $sql .= "or $mtable.state = 'Moderated' ";
 
-$sql =  "select UNIX_TIMESTAMP($ttable.tstamp) as unixtime," .
-        " $ttable.tid, $ttable.mid, $ttable.flags, $mtable.state from $ttable, $mtable where" .
-        " $ttable.tid >= ? and" .
-        " $ttable.tid <= ? and" .
-        " $ttable.mid >= ? and" .
-        " $ttable.mid <= ? and" .
-        " $ttable.flags NOT LIKE '%STICKY%' and " .   // removing sticky threads from the selection keeps offsets correct if sticky is on page 1
-        " $ttable.mid = $mtable.mid and ( $mtable.state = 'Active' ";
-$sql_args = array($index['mintid'], $index['maxtid'], $index['minmid'], $index['maxmid']);
-if ($user->capable($forum['fid'], 'Delete'))
-  $sql .= "or $mtable.state = 'Deleted' or $mtable.state = 'Moderated' or $mtable.state = 'OffTopic' "; 
-else {
-  if (isset($user->pref['ShowModerated']))
-    $sql .= "or $mtable.state = 'Moderated' ";
+      if (isset($user->pref['ShowOffTopic']))
+        $sql .= "or $mtable.state = 'OffTopic' ";
+    }
 
-  if (isset($user->pref['ShowOffTopic']))
-    $sql .= "or $mtable.state = 'OffTopic' ";
-}
+    if ($user->valid()) {
+      $sql .= "or $mtable.aid = ?";
+      $sql_args[] = $user->aid;
+    }
 
-if ($user->valid()) {
-  $sql .= "or $mtable.aid = ?";
-  $sql_args[] = $user->aid;
-}
+    /* Sort all of the messages by date and descending order */
+    $sql .= ") order by $ttable.tid desc";
 
-/* Sort all of the messages by date and descending order */
-$sql .= ") order by $ttable.tid desc";
+    /*  Limit to the maximum number of threads per page
+        correct offsets for sticky thread shown on first page */
+    if ($curpage == 1) {
+      $sql .= " limit " . (int)($skipthreads) . "," . (int)($threadsperpage - $numshown - $stickythreads);
+    } else {
+      $sql .= " limit " . (int)($skipthreads - $stickythreads) . "," . (int)($threadsperpage - $numshown);
+    }
+        
+    $sth = db_query($sql, $sql_args);
+    $thread = $sth->fetch();
+    var_dump($thread);
+    if ($thread)
+      break;
 
-/*  Limit to the maximum number of threads per page
-    correct offsets for sticky thread shown on first page */
-if ($curpage == 1) {
-  $sql .= " limit " . (int)($skipthreads) . "," . (int)($threadsperpage - $numshown - $stickythreads);
-} else {
-  $sql .= " limit " . (int)($skipthreads - $stickythreads) . "," . (int)($threadsperpage - $numshown);
-}
+    $sth->closeCursor();
+    $threadtable--;
+  }
 
-$sth = db_query($sql, $sql_args);
-$threads = $sth->fetchAll();
+  if (!isset($indexes[$threadtable]))
+    break;
 
-foreach($threads as $thread) {
+  do {
+    $skipthreads ++;
+    if (isset($threadshown[$thread['tid']]))
+      continue;
 
-  gen_thread_flags($thread);                           
-  $messagestr = gen_thread($thread);
+    gen_thread_flags($thread);
+    $messagestr = gen_thread($thread);
+    if (!$messagestr) continue;
 
-  if (isset($thread['flag']['Sticky'])) {	/* calculated by gen_thread_flags() */
-    $tpl->set_var("CLASS", "srow" . ($numshown % 2));
-    if (is_thread_bumped($thread)) $tthreadsshown++;
-  } else if (is_thread_bumped($thread)) {
-    $tpl->set_var("CLASS", "trow" . ($numshown % 2));
-    $tthreadsshown++;
-  } else
-    $tpl->set_var("CLASS", "row" . ($numshown % 2));
+  /*
+      if ($thread['state'] == 'Deleted')
+        $tpl->set_var("CLASS", "drow" . ($numshown % 2));
+      else if ($thread['state'] == 'Moderated')
+        $tpl->set_var("CLASS", "mrow" . ($numshown % 2));
+      else
+  */
+    if (isset($thread['flag']['Sticky'])) {	/* calculated by gen_thread_flags() */
+      $tpl->set_var("CLASS", "srow" . ($numshown % 2));
+      if (is_thread_bumped($thread)) $tthreadsshown++;
+    } else if (is_thread_bumped($thread)) {
+      $tpl->set_var("CLASS", "trow" . ($numshown % 2));
+      $tthreadsshown++;
+    } else
+      $tpl->set_var("CLASS", "row" . ($numshown % 2));
 
-  $threadlinks = gen_threadlinks($thread);
+    $threadlinks = gen_threadlinks($thread);
 
-  $tpl->set_var("MESSAGES", $messagestr);
-  $tpl->set_var("THREADLINKS", $threadlinks);
+    $tpl->set_var("MESSAGES", $messagestr);
+    $tpl->set_var("THREADLINKS", $threadlinks);
 
-  $tpl->parse("_row", "row", true);
+    $tpl->parse("_row", "row", true);
 
-  $numshown++;
+    $numshown++;
+  } while ($thread = $sth->fetch());
+  $sth->closeCursor();
 }
 
 if (!process_tthreads(true /* just count */))
