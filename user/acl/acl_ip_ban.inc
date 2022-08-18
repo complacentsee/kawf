@@ -36,8 +36,8 @@ class AclIpBan {
       $params[] = '?';
     }
     $sth = db_query("SELECT ban_type FROM acl_ban_types WHERE id IN (" .
-                    implode(",", $params) . ") ORDER BY id",
-                    $ids);
+            implode(",", $params) . ") ORDER BY id",
+            $ids);
     $bans = array();
     while($row = $sth->fetch()) {
       $bans[] = $row[0];
@@ -55,8 +55,8 @@ class AclIpBan {
       $params[] = '?';
     }
     $sth = db_query("SELECT id FROM acl_ban_types " .
-                     "WHERE ban_type IN (" . implode(",", $params) . ")",
-                     $banstring_list);
+            "WHERE ban_type IN (" . implode(",", $params) . ")",
+            $banstring_list);
     $ids = array();
     while($row = $sth->fetch()) {
       $ids[] = (int)$row[0];
@@ -66,12 +66,25 @@ class AclIpBan {
   }
 
   public static function find($ip_id) {
+    global $sql_databaseEngine;
+
     $ip_id = (int)$ip_id;
-    $row = db_query_first("SELECT id, INET_NTOA(ip) AS ipstring, " .
-                          "       INET_NTOA(mask) AS maskstring, note " .
-                          "FROM acl_ips " .
-                          "WHERE id = ?",
-                          array($ip_id));
+    if(isset($sql_databaseEngine)){
+      if($sql_databaseEngine == 'pgsql'){
+        $row = db_query_first("SELECT id, ip AS ipstring, " .
+                "mask AS maskstring, note " .
+                "FROM acl_ips " .
+                "WHERE id = ?",
+        array($ip_id));
+      } 
+    } else {
+      $row = db_query_first("SELECT id, INET_NTOA(ip) AS ipstring, " .
+              "INET_NTOA(mask) AS maskstring, note " .
+              "FROM acl_ips " .
+              "WHERE id = ?",
+      array($ip_id));
+    }
+
     if($row) {
       list($id, $ipstring, $maskstring, $note) = $row;
       $id = (int)$id;
@@ -83,9 +96,19 @@ class AclIpBan {
   }
 
   public static function find_all() {
-    $sth = db_query("SELECT id, INET_NTOA(ip) AS ipstring, " .
-                    "       INET_NTOA(mask) AS maskstring, note " .
-                    "FROM acl_ips");
+    global $sql_databaseEngine;
+    if(isset($sql_databaseEngine)){
+      if($sql_databaseEngine == 'pgsql'){
+        $sth = db_query("SELECT id, ip AS ipstring, " .
+                "mask AS maskstring, note " .
+                "FROM acl_ips");
+      }
+    } else {
+      $sth = db_query("SELECT id, INET_NTOA(ip) AS ipstring, " .
+              "INET_NTOA(mask) AS maskstring, note " .
+              "FROM acl_ips");
+    }
+
     $acl_ip_bans = array();
     while($row = $sth->fetch()) {
       list($id, $ipstring, $maskstring, $note) = $row;
@@ -98,13 +121,26 @@ class AclIpBan {
   }
 
   public static function find_matching_bans($otherip) {
+    global $sql_databaseEngine;
+
     // Return a list of all AclIpBan objects that match $otherip:
     // $bans = AclIpBan::find_matching_bans("1.2.3.4");  // return an array
-    $sth = db_query("SELECT id, INET_NTOA(ip) AS ipstring, " .
-                    "       INET_NTOA(mask) AS maskstring, note " .
-                    "FROM acl_ips " .
-                    "WHERE ip & mask = INET_ATON(?) & mask",
-                    array($otherip));
+    if(isset($sql_databaseEngine)){
+      if($sql_databaseEngine == 'pgsql'){
+        $sth = db_query("SELECT id, ip AS ipstring, " .
+                "mask AS maskstring, note " .
+                "FROM acl_ips " .
+                "WHERE ip & mask = ? & mask",
+                array($otherip));
+      }
+    } else {
+      $sth = db_query("SELECT id, INET_NTOA(ip) AS ipstring, " .
+              "INET_NTOA(mask) AS maskstring, note " .
+              "FROM acl_ips " .
+              "WHERE ip & mask = INET_ATON(?) & mask",
+      array($otherip));
+    }
+
     $acl_ip_bans = array();
     while($row = $sth->fetch()) {
       list($id, $ipstring, $maskstring, $note) = $row;
@@ -229,6 +265,7 @@ class AclIpBan {
   }
 
   public function save() {
+    global $sql_databaseEngine;
     if(is_null($this->id)) {
       // Create new records.
       if(!self::is_ip_valid($this->ipstring)) {
@@ -237,9 +274,18 @@ class AclIpBan {
       if(!self::is_ip_valid($this->maskstring)) {
         throw new AclIpBanInvalidMask($this->maskstring);
       }
-      db_exec("INSERT INTO acl_ips (ip, mask, note) " .
-              "VALUES (INET_ATON(?), INET_ATON(?), ?)",
-              array($this->ipstring, $this->maskstring, $this->note));
+      if(isset($sql_databaseEngine)){
+        if($sql_databaseEngine == 'pgsql'){
+          db_exec("INSERT INTO acl_ips (ip, mask, note) " .
+          "VALUES (?, ?, ?)",
+          array($this->ipstring, $this->maskstring, $this->note));
+        }
+      } else {
+        db_exec("INSERT INTO acl_ips (ip, mask, note) " .
+        "VALUES (INET_ATON(?), INET_ATON(?), ?)",
+        array($this->ipstring, $this->maskstring, $this->note));
+      }
+
       $this->id = db_last_insert_id();
 
       $ban_type_ids = self::find_ban_type_ids($this->bans);
@@ -310,7 +356,7 @@ class AclIpBan {
             $insert_sql_args[] = $ban_type_id;
           }
           $insert_sql = "INSERT INTO acl_ip_bans (ip_id, ban_type_id) " .
-                        "VALUES " . implode(", ", $values);
+                          "VALUES " . implode(", ", $values);
         }
         // MyISAM does not support transactions, so lock the table during
         // this change to avoid a race condition.

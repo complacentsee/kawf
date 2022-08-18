@@ -1,0 +1,32 @@
+FROM php:8.0-apache
+
+# add dependencies
+RUN apt-get update && apt-get install -y \
+      mariadb-client-10.5 \
+      tar \
+      unzip \
+      vim \
+    && /usr/local/bin/docker-php-ext-install -j$(nproc) pdo_mysql
+
+# Install Postgre PDO
+RUN apt-get install -y libpq-dev \
+    postgresql-client-common \
+    && docker-php-ext-configure pgsql -with-pgsql=/usr/include/pgsql \
+    && docker-php-ext-install -j$(nproc) pdo_pgsql pgsql
+
+# use custom php configuration
+RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+
+# copy site and confs
+ARG build_type
+COPY ./ /var/www/html/
+COPY ./docker/*.inc /var/www/html/config/
+COPY ./docker/$build_type.conf /etc/apache2/sites-available
+
+RUN a2ensite $build_type.conf && a2enmod rewrite
+RUN rm /etc/apache2/sites-enabled/000-default.conf
+
+WORKDIR /var/www/html/config
+
+EXPOSE 80 443
+CMD ["apache2-foreground"]

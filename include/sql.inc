@@ -4,10 +4,14 @@ class PDODuplicateKey extends RuntimeException {}
 
 class SQLAuth {
     public function __construct($host, $db, $user, $pass) {
-	$this->hostname=$host;
-	$this->database=$db;
-	$this->username=$user;
-	$this->password=$pass;
+      // The default database type is assumed to be mysql.
+      $this->hostname=$host;
+      $this->database=$db;
+      $this->username=$user;
+      $this->password=$pass;
+      $this->connectionType = 'host';
+      $this->databaseEngine = 'mysql';
+      $this->databasePort = null;
     }
 }
 
@@ -23,12 +27,27 @@ function _db_connect($sql_auth) {
     $db = $sql_auth->database;
     $user = $sql_auth->username;
     $pass = $sql_auth->password;
-    // This is MySQL specific.  The correct way to deal with timezones would
-    // be to run everything in UTC and do any adjustments in the code.
-    $DBH = new PDO("mysql:host=$host;dbname=$db", $user, $pass, array(
+    $connectionType = $sql_auth->connectionType;
+    $databaseEngine = $sql_auth->databaseEngine;
+    $port = $sql_auth->databasePort;
+
+    $dsn = "$databaseEngine:$connectionType=$host;dbname=$db" . (isset($port) ? ";port=$port" : "");
+
+    if(isset($sql_databaseEngine)){
+      if($sql_databaseEngine == 'pgsql'){
+        $DBH = new PDO($dsn, $user, $pass, array(
+          PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+          )); 
+      }
+    } else {
+      // This is MySQL specific.  The correct way to deal with timezones would
+      // be to run everything in UTC and do any adjustments in the code.
+      $DBH = new PDO($dsn, $user, $pass, array(
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::MYSQL_ATTR_INIT_COMMAND => "set session time_zone='+0:00'"
-    ));
+        )); 
+    }
+
   } catch(PDOException $e) {
      // echo "<!-- $e -->\n";
      echo "<pre>Down for maintenance</pre>\n";
@@ -49,10 +68,19 @@ function db_connect($sql_auth=null) {
   }
 
   if (!isset($sql_auth)) {
-    global $sql_host, $database, $sql_username, $sql_password;
+    global $sql_host, $database, $sql_username, $sql_password, $sql_connectionType, $sql_databaseEngine, $sql_databasePort;
     $sql_auth = new SQLAuth('localhost', $database, $sql_username, $sql_password);
     if(isset($sql_host)) {
       $sql_auth->hostname = $sql_host;
+    }
+    if(isset($sql_connectionType)) {
+      $sql_auth->connectionType = $sql_connectionType;
+    }
+    if(isset($sql_databaseEngine)) {
+      $sql_auth->databaseEngine = $sql_databaseEngine;
+    }
+    if(isset($sql_databasePort)) {
+      $sql_auth->port = $sql_databasePort;
     }
   }
 
@@ -72,14 +100,20 @@ function db_query($sql, $args=array()) {
   try {
     $sth->execute($args);
   } catch(PDOException $e) {
-    //error_log(sprintf("query: '%s', args: [%s]", $sql, implode(',', $args)));
-    if($e->getCode() == '23000') {
-      // '23000' is actually integrity constraint violation, but in case
-      // of MySQL it's the same as duplicate key exception.
-      $ne = new PDODuplicateKey($e->getMessage(), $e->getCode(), $e);
-      $ne->errorInfo = $e->errorInfo;
-      throw $ne;
-    }
+        if($e->getCode() == '23505') {
+          // '23505' is actually integrity constraint violation, but in case
+          // of POSTGRESQL it's the same as duplicate key exception.
+          $ne = new PDODuplicateKey($e->getMessage(), $e->getCode(), $e);
+          $ne->errorInfo = $e->errorInfo;
+          throw $ne;
+        }
+        if($e->getCode() == '23000') {
+          // '23000' is actually integrity constraint violation, but in case
+          // of MySQL it's the same as duplicate key exception.
+          $ne = new PDODuplicateKey($e->getMessage(), $e->getCode(), $e);
+          $ne->errorInfo = $e->errorInfo;
+          throw $ne;
+        }
     throw $e;
   }
   return $sth;
@@ -103,6 +137,24 @@ function db_query_first($sql, $args=array()) {
   $row = $sth->fetch(PDO::FETCH_BOTH);
   $sth->closeCursor();
   return $row ? $row : NULL;
+}
+
+// Prepare and execute a database query within a transacation, if transacation 
+// succeeds, commit it.  If it fails, rollback the transaction and throw the 
+// exception.
+function db_query_transaction($sql, $args=array()) {
+  global $DBH;
+  $DBH->beginTransaction();
+  try {
+    $sth = db_query($sql, $args);
+    $row = $DBH->lastInsertId();
+    $DBH->commit();
+  } catch(PDODuplicateKey $e) {
+    $DBH->rollBack();
+    $row = NULL;
+    throw $e;
+  }
+  return $row;
 }
 
 function db_last_insert_id() {

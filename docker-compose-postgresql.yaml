@@ -1,0 +1,23 @@
+version: '3'
+
+services:
+   db:
+     image: postgres
+     volumes:
+       - 'db_data:/var/lib/postgresql/data'
+     restart: unless-stopped
+     env_file:
+       - 'config/envvars'
+
+   kawf:
+     depends_on:
+       - db2
+     image: kawf:latest
+     ports:
+       - "80:80"
+     restart: unless-stopped
+     env_file:
+       - 'config/envvars'
+
+volumes:
+    db_data: {}

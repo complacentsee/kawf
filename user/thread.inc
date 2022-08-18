@@ -6,20 +6,21 @@ require_once("listthread.inc");
 function get_thread_messages($thread, $vmid = 0)
 {
   global $user, $indexes;
-
   /* find my messages and later */
-  for ($index = find_msg_index($thread['mid']); isset($indexes[$index]); $index++) {
-    $iid = $indexes[$index]['iid'];
+  foreach ($indexes as $index) {
+    $iid = $index['iid'];
+
     /* TZ: unixtime is seconds since epoch */
     $sql = "select mid, tid, pid, aid, state, UNIX_TIMESTAMP(date) as unixtime, subject, flags, name, email, views " .
       "from f_messages$iid where tid = ? order by mid";
     $sth = db_query($sql, array($thread['tid']));
-    while ($msg = $sth->fetch()) {
-      /* modifies message */
+    $msgs = $sth->fetchAll();
+    $sth->closeCursor();
+    
+    foreach($msgs as $msg){
       process_message($user, $msg);
       $messages[] = $msg;
     }
-    $sth->closeCursor();
   }
 
   if (!isset($msg)) {

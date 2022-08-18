@@ -1,5 +1,7 @@
 <?php
 
+global $sql_databaseEngine;
+
 $user->req();
 
 if ($user->status != 'Active') {
@@ -304,18 +306,40 @@ if (isset($error) || isset($preview)) {
     err_not_found("message $mid has no iid");
     exit;
   }
-  $sql = "update f_messages$iid set name = ?, email = ?, flags = ?, subject = ?, " .
-	"message = ?, url = ?, urltext = ?, video = ?, state = ?, " .
-	"changes = CONCAT(changes, 'Edited by ', ?, '/', ?, ' at ', NOW(), ' from ', ?, '\n', ?, '\n') " .
-	"where mid = ?";
+
+  if(isset($sql_databaseEngine)){
+    if($sql_databaseEngine == 'pgsql'){
+      $sql = "update f_messages$iid set name = ?, email = ?, flags = ?, subject = ?, " .
+      "message = ?, url = ?, urltext = ?, video = ?, state = ?, " .
+      "changes = changes || 'Edited by ' || ? || '/' || ? || ' at ' || NOW() || ' from ' || ? || '\n' || ? || '\n' " .
+      "where mid = ?";
+    }
+  } else {
+    $sql = "update f_messages$iid set name = ?, email = ?, flags = ?, subject = ?, " .
+    "message = ?, url = ?, urltext = ?, video = ?, state = ?, " .
+    "changes = CONCAT(changes, 'Edited by ', ?, '/', ?, ' at ', NOW(), ' from ', ?, '\n', ?, '\n') " .
+    "where mid = ?";
+  }
+
   db_exec($sql, array(
     $nmsg['name'], $nmsg['email'], $nmsg['flags'], $nmsg['subject'],
     $nmsg['message'], $nmsg['url'], $nmsg['urltext'], $nmsg['video'], $nmsg['state'],
     $user->name, $user->aid, $remote_addr, $diff, $mid
   ));
 
-  $sql = "replace into f_updates ( fid, mid ) values ( ?, ? )";
-  db_exec($sql, array($forum['fid'], $mid));
+  // f_updates serves no purpose at the current state of the application,
+  // why are we still updating values?
+  //
+  // if(isset($sql_databaseEngine)){
+  //   if($sql_databaseEngine == 'pgsql'){
+  //     $sql = "insert into f_updates ( fid, mid ) values ( ?, ? ) 
+  //       ON CONFLICT (fid) DO UPDATE 
+  //       SET mid = excluded.mid;";
+  //   }
+  // } else {
+  //   $sql = "replace into f_updates ( fid, mid ) values ( ?, ? )";
+  // }
+  // db_exec($sql, array($forum['fid'], $mid));
 
   /* update user post counts and f_indexes */
   if ($state_changed)

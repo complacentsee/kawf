@@ -12,6 +12,7 @@
 
 function postmessage($user, $fid, &$msg, $request)
 {
+  global $sql_databaseEngine;
   $iid = last_iid();
   $mtable = "f_messages" . $iid;
   $ttable = "f_threads" . $iid;
@@ -72,9 +73,10 @@ function postmessage($user, $fid, &$msg, $request)
 
     /* update with new message */
     $sql = "update $mtable set " .
-	"name = ?, email = ?, ip = ?, flags = ?, subject = ?, " .
-	"message = ?, url = ?, urltext = ?, video = ?, state = ? " .
-	"where mid = ? and state = 'Active'";
+      "name = ?, email = ?, ip = ?, flags = ?, subject = ?, " .
+      "message = ?, url = ?, urltext = ?, video = ?, state = ? " .
+      "where mid = ? and state = 'Active'";
+
     db_exec($sql, array(
       $msg['name'], $msg['email'], $msg['ip'], $msg['flags'], $msg['subject'],
       $msg['message'], $msg['url'], $msg['urltext'], $msg['video'],
@@ -84,41 +86,26 @@ function postmessage($user, $fid, &$msg, $request)
     /* unwind... do we really need these? */
     /* unwind index for old message */
     if ($omsg != null && !is_null($omsg['state'])) {
-	if (!isset($msg['pmid']))
-	  db_exec("update f_indexes set " . $omsg['state'] . " = " . $omsg['state'] . " - 1 where iid = ?", array($iid));
+      if (!isset($msg['pmid']))
+        db_exec("update f_indexes set " . $omsg['state'] . " = " . $omsg['state'] . " - 1 where iid = ?", array($iid));
 
-	/* unwind post count for old message */
-	$user->post($fid, $omsg['state'], -1);
+      /* unwind post count for old message */
+      $user->post($fid, $omsg['state'], -1);
     }
 
     $track_thread = $untrack_thread = false;
   } else {
+
     /* New message */
-    /* Grab a new mid, this should work reliably */
-    do {
-      $sql = "select max(id) + 1 from f_unique where fid = ? and type = 'Message'";
-      $row = db_query_first($sql, array($fid));
-
-      list ($msg['mid']) = $row;
-
-      $sql = "insert into f_unique ( fid, type, id ) values ( ?, 'Message', ?)";
-      try {
-        db_exec($sql, array($fid, $msg['mid']));
-      } catch(PDODuplicateKey $e) {
-        continue;
-      }
-      break;
-    } while (TRUE);
-
-    /* update postcookie with the new mid */
+    // /* update postcookie with the new mid */
     db_exec("update f_dupposts set mid = ? where cookie = ?", array($msg['mid'], $request['postcookie']));
 
     /* add the message to the db */
     /* TZ: f_messagesXX 'date' is SQL server local time */
     /* FIXME: translate pid -> pmid */
     $sql = "insert into $mtable " .
-	"( mid, aid, pid, tid, name, email, date, ip, flags, subject, message, url, urltext, video, state, views, changes ) "
-            . "values ( ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, 0, ? );";
+      "(aid, pid, tid, name, email, date, ip, flags, subject, message, url, urltext, video, state, views, changes ) "
+      . "values (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, 0, ? );";  
 
     if (array_key_exists('imagedeleteurl', $msg) && $msg["imagedeleteurl"]) {
       $msg["changes"] = "Image delete url for " . $msg["imageurl"] . " = " . $msg["imagedeleteurl"] . "\n";
@@ -126,41 +113,27 @@ function postmessage($user, $fid, &$msg, $request)
       $msg["changes"] = "";
     }
 
-    db_exec($sql, array(
-      $msg['mid'], $user->aid, isset($msg['pmid']) ? $msg['pmid'] : 0, isset($msg['tid']) ? $msg['tid'] : 0, $msg['name'],
+    $mid = db_query_transaction($sql, array(
+      $user->aid, isset($msg['pmid']) ? $msg['pmid'] : 0, isset($msg['tid']) ? $msg['tid'] : 0, $msg['name'],
       $msg['email'], $msg['ip'], $msg['flags'], $msg['subject'],
       $msg['message'], $msg['url'], $msg['urltext'], $msg['video'],
       $msg['state'], $msg['changes']
     ));
 
+    $msg['mid'] = $mid;
 
-    $tstamp = NULL;
+  //   $tstamp = NULL;
     if (!isset($msg['pmid'])) {
-      /* Grab a new tid, this should work reliably */
-      do {
-        $row = db_query_first("select max(id) + 1 from f_unique where fid = ? and type = 'Thread'", array($fid));
-        $msg['tid'] = $row ? $row[0] : NULL;
-	if (!is_numeric($msg['tid']))
-          throw new RuntimeException('failed to get new tid for ' . $request['postcookie']);
 
-        $sql = "insert into f_unique ( fid, type, id ) values ( ?, 'Thread', ? )";
-        try {
-          db_exec($sql, array($fid, $msg['tid']));
-        } catch(PDODuplicateKey $e) {
-          continue;
-        }
-        break;
-      } while (TRUE);
+        /* Message is a new thread, update thread table */
+      /* TZ: f_threadsXX 'tstamp' is SQL server local time */
+      $sql = "insert into $ttable (mid, tstamp, flags ) values ( ?, NOW(), '' )";
+      $tid = db_query_transaction($sql, array($msg['mid']));
+      $msg['tid'] = $tid;
 
       $sql = "update $mtable set tid = ? where mid = ?";
       db_exec($sql, array($msg['tid'], $msg['mid']));
 
-      /* TZ: f_threadsXX 'tstamp' is SQL server local time */
-      $sql = "insert into $ttable ( tid, mid, tstamp, flags ) values ( ?, ?, NOW(), '' )";
-      db_exec($sql, array($msg['tid'], $msg['mid']));
-
-      $sql = "update f_indexes set maxtid = ? where iid = ? and maxtid < ?";
-      db_exec($sql, array($msg['tid'], $iid, $msg['tid']));
     } else {
       if (!is_numeric($msg['tid']))
         throw new RuntimeException('no tid on followup to ' . $msg['pmid'] . ' for ' . $request['postcookie']);
@@ -168,13 +141,12 @@ function postmessage($user, $fid, &$msg, $request)
       $tid = addslashes($msg['tid']);
 
       /* check to make sure we're not already tracking, or we're already 
-	 not tracking */
+	    not tracking */
       $row = db_query_first(
         "select count(*) from f_tracking where fid = ? and aid = ? and tid = ?",
         array($fid, $user->aid, $tid)
       );
       $count = $row ? $row[0] : NULL;
-
 
       /* override track/untrack accordingly */
       if ($count) $track_thread = false;
@@ -183,29 +155,52 @@ function postmessage($user, $fid, &$msg, $request)
       /* TZ: 'tstamp' is SQL server localtime */
       /* save current tstamp for track thread - bug 2969636 */
       if ($track_thread) {
-	$row = db_query_first("select UNIX_TIMESTAMP(tstamp) from $ttable where tid = ?", array($tid));
-	$tstamp = $row ? $row[0] : NULL;
+        $row = db_query_first("select UNIX_TIMESTAMP(tstamp) from $ttable where tid = ?", array($tid));
+        $tstamp = $row ? $row[0] : NULL;
       }
       $sql = "update $ttable set replies = replies + 1, tstamp = NOW() where tid = ?";
       db_exec($sql, array($tid));
     }
 
-    $sql = "update f_indexes set maxmid = ? where iid = ? and maxmid < ?";
-    db_exec($sql, array($msg['mid'], $iid, $msg['mid']));
+    if(isset($sql_databaseEngine)){
+      if($sql_databaseEngine == 'pgsql'){
+        // this portion is handled via triggers in the database
+      }
+    } else {
+      /* update indexes  */
+      $sql = "update f_indexes set maxmid = ? ";
 
-    /* update index for new message */
-    if (!isset($msg['pmid'])) {
-      $status = $msg['state'];
-      $sql = "update f_indexes set $status = $status + 1 where iid = ?";
-      db_exec($sql, array($iid));
+      /* update index for new message */
+      if (!isset($msg['pmid'])) {
+        $status = $msg['state'];
+        
+        $sql .= ", $status = $status + 1, maxtid = ? ";
+      }
+      $sql .= "where iid = ?";
+
+      if (!isset($msg['pmid'])) {
+        db_exec($sql, array($msg['mid'], $msg['tid'], $iid));
+      } else {
+        db_exec($sql, array($msg['mid'], $iid));
+      }
     }
 
     /* bump post count for user */
     $user->post($fid, $msg['state'], 1);
   }
-
-  $sql = "replace into f_updates ( fid, mid ) values ( ?, ? )";
-  db_exec($sql, array($fid, $msg['mid']));
+  
+  // f_updates serves no purpose at the current state of the application,
+  // why are we still updating values?
+  // if(isset($sql_databaseEngine)){
+  //   if($sql_databaseEngine == 'pgsql'){
+  //     $sql = "insert into f_updates ( fid, mid ) values ( ?, ? )
+  //     ON CONFLICT (fid) DO UPDATE 
+  //     SET mid = excluded.mid;";
+  //   }
+  // } else {
+  //   $sql = "replace into f_updates ( fid, mid ) values ( ?, ? )";
+  // }
+  // db_exec($sql, array($fid, $msg['mid']));
 
   if ($track_thread && is_numeric($msg['tid']))
     track_thread($fid, $msg['tid'], (isset($request['EmailFollowup']))?'SendEmail':'', $tstamp);

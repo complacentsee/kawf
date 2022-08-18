@@ -40,7 +40,19 @@ if (isset($_POST['submit'])) {
   db_exec(sprintf($create_message_table, $iid));
   db_exec(sprintf($create_thread_table, $iid));
   db_exec(sprintf($create_sticky_table, $iid));
-  db_exec(sprintf($create_sticky_trigger, $iid, $iid, $iid, $iid));
+  global $sql_databaseEngine;
+  if(isset($sql_databaseEngine)){
+    if($sql_databaseEngine == 'pgsql'){
+      db_exec(sprintf($create_sticky_trigger_function, $iid, $iid, $iid));
+      db_exec(sprintf($create_sticky_trigger, $iid, $iid, $iid));
+      db_exec(sprintf($update_f_indexes_iid_maxmid_function, $iid, $iid));
+      db_exec(sprintf($update_f_indexes_iid_maxtid_function, $iid, $iid));
+      db_exec(sprintf($trigger_update_f_indexes_iid_mid, $iid, $iid, $iid));
+      db_exec(sprintf($trigger_update_f_indexes_iid_tid, $iid, $iid, $iid));
+    }
+  } else {
+      db_exec(sprintf($create_sticky_trigger, $iid, $iid, $iid, $iid));
+    }
 
   Header("Location: index.phtml?message=" . urlencode("Forum Added"));
   exit;

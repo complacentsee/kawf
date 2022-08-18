@@ -1,4 +1,7 @@
 <?php
+
+global $sql_databaseEngine;
+
 if (!isset($forum)) {
   echo "Invalid forum\n";
   exit;
@@ -55,10 +58,23 @@ $flags = implode(",", array_filter($options));
 $sql = "update f_threads$iid  set flags = ? where tid = ?";
 db_exec($sql, array($flags, $tid));
 
-db_exec("update f_messages$iid  set " .
-        "changes = CONCAT(changes, ?, ' by ', ?, '/', ?, ' at ', NOW(), '\n') " .
-        "where mid = ?",
-        array($what, $user->name, $user->aid, $thread['mid']));
+var_dump($what);
+var_dump($user->name);
+var_dump($user->aid);
+var_dump($thread['mid']);
+if(isset($sql_databaseEngine)){
+  if($sql_databaseEngine == 'pgsql'){
+    db_exec("update f_messages$iid  set " .
+      "changes = changes || ? || ' by ' || ? || '/' || ? || ' at ' || NOW() || '\n' " .
+      "where mid = ?",
+      array($what, $user->name, $user->aid, $thread['mid']));
+  }
+} else {
+  db_exec("update f_messages$iid  set " .
+    "changes = CONCAT(changes, ?, ' by ', ?, '/', ?, ' at ', NOW(), '\n') " .
+    "where mid = ?",
+    array($what, $user->name, $user->aid, $thread['mid']));
+}
 
 header("Location: $page");
 ?>

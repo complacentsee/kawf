@@ -74,7 +74,7 @@ class ForumUser {
      even for invalid/non-existent users or tzoff wont ever get set! */
   function find_by_aid($aid, $req = true)
   {
-    if (!is_int($aid)) return $this->find('0', $req);
+    if (!is_int($aid)) return $this->find('aid = -0', $req);
 
     return $this->find("aid = $aid", $req);
   }
@@ -88,7 +88,7 @@ class ForumUser {
   {
     global $_COOKIE;
 
-    if (!isset($_COOKIE['KawfAccount']) || $_COOKIE['KawfAccount']=='') return $this->find('0');
+    if (!isset($_COOKIE['KawfAccount']) || $_COOKIE['KawfAccount']=='') return $this->find('aid = -0');
 
     return $this->find("cookie = '" . addslashes($_COOKIE['KawfAccount']) . "'");
   }
@@ -300,6 +300,8 @@ class ForumUser {
 class AccountUser extends ForumUser {
   function add_pending($type, $data = "")
   {
+    global $sql_databaseEngine;
+
     do {
       /* We want a 6 digit number */
       $tid = mt_rand(100000, 999999);
@@ -309,7 +311,13 @@ class AccountUser extends ForumUser {
                 "( tid, cookie, aid, type, data, status, tstamp ) values " .
                 "( ?, ?, ?, ?, ?, 'Sent', NOW() )";
       try {
-        db_exec($sql, array($tid, $cookie, $this->aid, $type, $data));
+        if(isset($sql_databaseEngine)){
+          if($sql_databaseEngine == 'pgsql'){
+            db_exec($sql, array($tid, $cookie, $this->aid, $type, $data));
+          }
+        } else {
+          db_exec($sql, array($tid, $cookie, $this->aid, $type, $data));
+        }
       } catch(PDODuplicateKey $e) {
         continue;
       }
