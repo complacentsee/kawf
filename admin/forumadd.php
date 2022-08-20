@@ -41,7 +41,7 @@ if (isset($_POST['submit'])) {
   db_exec(sprintf($create_thread_table, $iid));
   db_exec(sprintf($create_sticky_table, $iid));
   global $sql_databaseEngine;
-  if(isset($sql_databaseEngine)){
+  if(isset($sql_databaseEngine) && $sql_databaseEngine){
     if($sql_databaseEngine == 'pgsql'){
       db_exec(sprintf($create_sticky_trigger_function, $iid, $iid, $iid));
       db_exec(sprintf($create_sticky_trigger, $iid, $iid, $iid));
@@ -49,6 +49,13 @@ if (isset($_POST['submit'])) {
       db_exec(sprintf($update_f_indexes_iid_maxtid_function, $iid, $iid));
       db_exec(sprintf($trigger_update_f_indexes_iid_mid, $iid, $iid, $iid));
       db_exec(sprintf($trigger_update_f_indexes_iid_tid, $iid, $iid, $iid));
+      db_exec(sprintf($create_index_f_message_pid, $iid, $iid));
+      db_exec(sprintf($create_index_f_message_tid, $iid, $iid));
+      db_exec(sprintf($create_index_f_message_state, $iid, $iid));
+      db_exec(sprintf($create_index_f_message_aid, $iid, $iid));
+      db_exec(sprintf($create_index_f_message_views, $iid, $iid));
+      db_exec(sprintf($create_index_f_thread_mid, $iid, $iid));
+      db_exec(sprintf($create_index_f_thread_flags, $iid, $iid));
     }
   } else {
       db_exec(sprintf($create_sticky_trigger, $iid, $iid, $iid, $iid));

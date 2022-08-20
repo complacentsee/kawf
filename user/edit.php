@@ -307,7 +307,7 @@ if (isset($error) || isset($preview)) {
     exit;
   }
 
-  if(isset($sql_databaseEngine)){
+  if(isset($sql_databaseEngine) && $sql_databaseEngine){
     if($sql_databaseEngine == 'pgsql'){
       $sql = "update f_messages$iid set name = ?, email = ?, flags = ?, subject = ?, " .
       "message = ?, url = ?, urltext = ?, video = ?, state = ?, " .
@@ -330,7 +330,7 @@ if (isset($error) || isset($preview)) {
   // f_updates serves no purpose at the current state of the application,
   // why are we still updating values?
   //
-  // if(isset($sql_databaseEngine)){
+  // if(isset($sql_databaseEngine) && $sql_databaseEngine){
   //   if($sql_databaseEngine == 'pgsql'){
   //     $sql = "insert into f_updates ( fid, mid ) values ( ?, ? ) 
   //       ON CONFLICT (fid) DO UPDATE 

@@ -69,7 +69,7 @@ class AclIpBan {
     global $sql_databaseEngine;
 
     $ip_id = (int)$ip_id;
-    if(isset($sql_databaseEngine)){
+    if(isset($sql_databaseEngine) && $sql_databaseEngine){
       if($sql_databaseEngine == 'pgsql'){
         $row = db_query_first("SELECT id, ip AS ipstring, " .
                 "mask AS maskstring, note " .
@@ -97,7 +97,7 @@ class AclIpBan {
 
   public static function find_all() {
     global $sql_databaseEngine;
-    if(isset($sql_databaseEngine)){
+    if(isset($sql_databaseEngine) && $sql_databaseEngine){
       if($sql_databaseEngine == 'pgsql'){
         $sth = db_query("SELECT id, ip AS ipstring, " .
                 "mask AS maskstring, note " .
@@ -125,7 +125,7 @@ class AclIpBan {
 
     // Return a list of all AclIpBan objects that match $otherip:
     // $bans = AclIpBan::find_matching_bans("1.2.3.4");  // return an array
-    if(isset($sql_databaseEngine)){
+    if(isset($sql_databaseEngine) && $sql_databaseEngine){
       if($sql_databaseEngine == 'pgsql'){
         $sth = db_query("SELECT id, ip AS ipstring, " .
                 "mask AS maskstring, note " .
@@ -274,7 +274,7 @@ class AclIpBan {
       if(!self::is_ip_valid($this->maskstring)) {
         throw new AclIpBanInvalidMask($this->maskstring);
       }
-      if(isset($sql_databaseEngine)){
+      if(isset($sql_databaseEngine) && $sql_databaseEngine){
         if($sql_databaseEngine == 'pgsql'){
           db_exec("INSERT INTO acl_ips (ip, mask, note) " .
           "VALUES (?, ?, ?)",

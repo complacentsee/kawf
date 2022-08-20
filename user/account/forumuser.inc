@@ -311,7 +311,7 @@ class AccountUser extends ForumUser {
                 "( tid, cookie, aid, type, data, status, tstamp ) values " .
                 "( ?, ?, ?, ?, ?, 'Sent', NOW() )";
       try {
-        if(isset($sql_databaseEngine)){
+        if(isset($sql_databaseEngine) && $sql_databaseEngine){
           if($sql_databaseEngine == 'pgsql'){
             db_exec($sql, array($tid, $cookie, $this->aid, $type, $data));
           }

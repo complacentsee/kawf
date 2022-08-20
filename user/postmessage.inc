@@ -48,9 +48,9 @@ function postmessage($user, $fid, &$msg, $request)
   /* Add it into the database */
   /* Check to make sure this isn't a duplicate */
   /* TZ: 'tstamp' is SQL server localtime */
-  $sql = "insert into f_dupposts ( cookie, fid, aid, ip, tstamp, mid ) values (?, ?, ?, ?, NOW(), 0 )";
+  //$sql = "insert into f_dupposts ( cookie, fid, aid, ip, tstamp, mid ) values (?, ?, ?, ?, NOW(), 0 )";
   try {
-    db_exec($sql, array($request['postcookie'], $fid, $user->aid, $msg['ip']));
+  //  db_exec($sql, array($request['postcookie'], $fid, $user->aid, $msg['ip']));
     /* No exception, everything is ok, post */
     $newmessage = true;
   } catch(PDODuplicateKey $e) {
@@ -98,7 +98,7 @@ function postmessage($user, $fid, &$msg, $request)
 
     /* New message */
     // /* update postcookie with the new mid */
-    db_exec("update f_dupposts set mid = ? where cookie = ?", array($msg['mid'], $request['postcookie']));
+    //db_exec("update f_dupposts set mid = ? where cookie = ?", array($msg['mid'], $request['postcookie']));
 
     /* add the message to the db */
     /* TZ: f_messagesXX 'date' is SQL server local time */
@@ -162,7 +162,7 @@ function postmessage($user, $fid, &$msg, $request)
       db_exec($sql, array($tid));
     }
 
-    if(isset($sql_databaseEngine)){
+    if(isset($sql_databaseEngine) && $sql_databaseEngine){
       if($sql_databaseEngine == 'pgsql'){
         // this portion is handled via triggers in the database
       }
@@ -191,7 +191,7 @@ function postmessage($user, $fid, &$msg, $request)
   
   // f_updates serves no purpose at the current state of the application,
   // why are we still updating values?
-  // if(isset($sql_databaseEngine)){
+  // if(isset($sql_databaseEngine) && $sql_databaseEngine){
   //   if($sql_databaseEngine == 'pgsql'){
   //     $sql = "insert into f_updates ( fid, mid ) values ( ?, ? )
   //     ON CONFLICT (fid) DO UPDATE 

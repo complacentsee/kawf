@@ -1,6 +1,6 @@
 <?php
 
-if(isset($sql_databaseEngine)){
+if(isset($sql_databaseEngine) && $sql_databaseEngine){
   if($sql_databaseEngine == 'pgsql'){
     #These are specific Postgres database engine table creation commands
 
@@ -84,15 +84,32 @@ if(isset($sql_databaseEngine)){
         primary key (mid)
       )";
 
-      $create_index_messages= "
-        create index if not exists f_messages%dindex on f_messages%d (pid, tid, state, date);";
+    $create_index_f_message_pid = "
+      create index concurrently if not exists  f_messages%d_pid on  f_messages%d (pid DESC);
+      ";
+
+    $create_index_f_message_tid = "
+      create index concurrently if not exists  f_messages%d_tid on  f_messages%d (tid DESC);
+      ";
+
+    $create_index_f_message_state = "
+      create index concurrently if not exists  f_messages%d_state on  f_messages%d (state);
+      ";
+
+    $create_index_f_message_aid = "
+      create index concurrently if not exists f_messages%d_aid on f_messages%d (aid);
+      ";
+
+    // $create_index_f_message_views = "
+    //   create index concurrently if not exists f_messages%d_views on f_messages%d (views);
+    //   ";
 
       //FIXME: no fill text indexing 
-      $create_index_messages_fulltext= "
-        NULL;";
+    $create_index_messages_fulltext= "
+      NULL;";
 
-      $create_thread_flags = "
-        CREATE TYPE threadFlags AS ENUM('Locked','Sticky', ' ');";
+    $create_thread_flags = "
+      CREATE TYPE threadFlags AS ENUM('Locked','Sticky', ' ');";
 
       //FIXME: flags WAS A SET AND WILL NOT WORK
       //          flags threadFlags default ' ',
@@ -105,6 +122,14 @@ if(isset($sql_databaseEngine)){
           tstamp TIMESTAMP not null default CURRENT_TIMESTAMP,
           primary key (tid)
         )";
+
+      $create_index_f_thread_mid = "
+        create index concurrently if not exists f_threads%d_mid on f_threads%d (mid DESC);
+        ";
+
+      $create_index_f_thread_flags = "
+        create index concurrently if not exists f_threads%d_flags on f_threads%d (flags);
+        ";
 
     $create_sticky_table = "
       create table if not exists f_sticky%d (

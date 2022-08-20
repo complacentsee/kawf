@@ -33,7 +33,7 @@ function _db_connect($sql_auth) {
 
     $dsn = "$databaseEngine:$connectionType=$host;dbname=$db" . (isset($port) ? ";port=$port" : "");
 
-    if(isset($sql_databaseEngine)){
+    if(isset($sql_databaseEngine) && false){
       if($sql_databaseEngine == 'pgsql'){
         $DBH = new PDO($dsn, $user, $pass, array(
           PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
@@ -73,13 +73,13 @@ function db_connect($sql_auth=null) {
     if(isset($sql_host)) {
       $sql_auth->hostname = $sql_host;
     }
-    if(isset($sql_connectionType)) {
+    if(isset($sql_connectionType) && $sql_connectionType) {
       $sql_auth->connectionType = $sql_connectionType;
     }
-    if(isset($sql_databaseEngine)) {
+    if(isset($sql_databaseEngine) && $sql_databaseEngine) {
       $sql_auth->databaseEngine = $sql_databaseEngine;
     }
-    if(isset($sql_databasePort)) {
+    if(isset($sql_databasePort) && $sql_databasePort) {
       $sql_auth->port = $sql_databasePort;
     }
   }

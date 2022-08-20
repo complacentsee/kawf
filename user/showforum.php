@@ -238,19 +238,12 @@ if ($curpage > 1) {
   }
 }
 
-while ($threadtable >= 0 && isset($indexes[$threadtable])) {
-  if (threads($threadtable) > $skipthreads)
-    break;
-
-  $skipthreads -= threads($threadtable);
-  $threadtable--;
-}
-
-if ($curpage != 1 && ($threadtable < 0 || !isset($indexes[$threadtable]))) {
+// Determine if the page is in range for the max thread in forum
+// if it is out of range sent to out of range page
+if ($curpage != 1 && ($index['maxtid'] < $skipthreads)) {
   err_not_found("Page out of range");
   exit;
 }
-
 
 /// Display Regular Threads
 $index = $indexes[$threadtable];
@@ -260,13 +253,8 @@ $mtable = "f_messages" . $index['iid'];
 
 $sql =  "select UNIX_TIMESTAMP($ttable.tstamp) as unixtime," .
         " $ttable.tid, $ttable.mid, $ttable.flags, $mtable.state from $ttable, $mtable where" .
-        " $ttable.tid >= ? and" .
-        " $ttable.tid <= ? and" .
-        " $ttable.mid >= ? and" .
-        " $ttable.mid <= ? and" .
         " $ttable.flags NOT LIKE '%STICKY%' and " .   // removing sticky threads from the selection keeps offsets correct if sticky is on page 1
         " $ttable.mid = $mtable.mid and ( $mtable.state = 'Active' ";
-$sql_args = array($index['mintid'], $index['maxtid'], $index['minmid'], $index['maxmid']);
 if ($user->capable($forum['fid'], 'Delete'))
   $sql .= "or $mtable.state = 'Deleted' or $mtable.state = 'Moderated' or $mtable.state = 'OffTopic' "; 
 else {
@@ -287,7 +275,7 @@ $sql .= ") order by $ttable.tid desc";
 
 /*  Limit to the maximum number of threads per page
     correct offsets for sticky thread shown on first page */
-if(isset($sql_databaseEngine)){
+if(isset($sql_databaseEngine) && $sql_databaseEngine){
   if($sql_databaseEngine == 'pgsql'){
     if ($curpage == 1) {
       $sql .= " offset " . (int)($skipthreads) . " limit " . (int)($threadsperpage - $numshown - $stickythreads);
@@ -305,6 +293,7 @@ if(isset($sql_databaseEngine)){
 
 $sth = db_query($sql, $sql_args);
 $threads = $sth->fetchAll();
+$sth->closeCursor();
 
 foreach($threads as $thread) {
 

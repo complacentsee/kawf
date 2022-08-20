@@ -58,11 +58,7 @@ $flags = implode(",", array_filter($options));
 $sql = "update f_threads$iid  set flags = ? where tid = ?";
 db_exec($sql, array($flags, $tid));
 
-var_dump($what);
-var_dump($user->name);
-var_dump($user->aid);
-var_dump($thread['mid']);
-if(isset($sql_databaseEngine)){
+if(isset($sql_databaseEngine) && $sql_databaseEngine){
   if($sql_databaseEngine == 'pgsql'){
     db_exec("update f_messages$iid  set " .
       "changes = changes || ? || ' by ' || ? || '/' || ? || ' at ' || NOW() || '\n' " .

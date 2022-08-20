@@ -15,7 +15,7 @@ if(!ini_get('safe_mode'))
 
 db_connect();
 
-if(isset($sql_databaseEngine)){
+if(isset($sql_databaseEngine) && $sql_databaseEngine){
     if($sql_databaseEngine == 'pgsql'){
         db_exec($create_forum_options);
         db_exec($create_unique_types);
@@ -67,7 +67,7 @@ db_exec($insert_static_ban_types);
 db_exec($create_acl_ip_bans_table);
 
 //create indexes if required
-if(isset($sql_databaseEngine)){
+if(isset($sql_databaseEngine) && $sql_databaseEngine){
     if($sql_databaseEngine == 'pgsql'){
         db_exec($create_index_f_indexes_fid);
         db_exec($create_index_f_tracking_fid);
